@@ -3,7 +3,7 @@
 <Class name="%ZJSON.Formatter">
 <Description>
 %JSON.Formatter implements the ability to format JSON documents which are
-expressed as strings, text or dynamic objects.
+expressed as strings, text or dynamic objects.  
 
 Class %JSON.Formatter Extends %RegisteredObject [ System = 4 ]</Description>
 <IncludeCode>%occInclude,%ZPVA</IncludeCode>
