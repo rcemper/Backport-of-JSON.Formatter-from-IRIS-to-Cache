@@ -1,5 +1,5 @@
-# Backport-of-JSON.Formatter-from-IRIS-to-Cache
-Have in Caché same formatting available as in IRIS  
+# Backport of %JSON.Formatter from IRIS to Caché
+Have in Caché the same formatting available as in IRIS  
 
 IRIS brought us an excellent %JSON.Formatter class. 
 This backport makes it available also in Caché.   
