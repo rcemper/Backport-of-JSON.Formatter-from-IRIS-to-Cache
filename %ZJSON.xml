@@ -1,0 +1,437 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25">
+<Class name="%ZJSON.Formatter">
+<Description>
+%JSON.Formatter implements the ability to format JSON documents which are
+expressed as strings, text or dynamic objects.
+
+Class %JSON.Formatter Extends %RegisteredObject [ System = 4 ]</Description>
+<IncludeCode>%occInclude,%ZPVA</IncludeCode>
+<Super>%RegisteredObject</Super>
+<TimeCreated>65341,83137.459069</TimeCreated>
+
+<UDLText name="T">
+<Content><![CDATA[
+/* Copyright (c) 2019 by InterSystems Corporation.
+   Cambridge, Massachusetts, U.S.A.  All rights reserved.
+   Confidential property of InterSystems Corporation. */
+]]></Content>
+</UDLText>
+
+<Property name="Indent">
+<Description>
+Indent specifies that indentation of the JSON output should take place.</Description>
+<Type>%Boolean</Type>
+<InitialExpression>1</InitialExpression>
+</Property>
+
+<Property name="IndentChars">
+<Description>
+IndentChars specifies the character sequence to be used for each indent level if Indent=1.</Description>
+<Type>%String</Type>
+<InitialExpression>"  "</InitialExpression>
+</Property>
+
+<Property name="LineTerminator">
+<Description>
+LineTerminator specifies the character sequence to terminate eaach line when indenting.</Description>
+<Type>%String</Type>
+<InitialExpression>$char(13,10)</InitialExpression>
+</Property>
+
+<Method name="Format">
+<Description><![CDATA[
+Format a JSON document using the specified indentation and write it to the current device.<br>
+The <var>input</var> argument is either JSON as a string or stream, or a subclass of %DynamicAbstractObject.<br>]]></Description>
+<FormalSpec>input</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit ..FormatInternal(input,"",1)
+]]></Implementation>
+</Method>
+
+<Method name="FormatToStream">
+<Description><![CDATA[
+Format a JSON document using the specified indentation and write it to a stream.<br>
+The <var>input</var> argument is either JSON as a string or stream, or a subclass of %DynamicAbstractObject.<br>]]></Description>
+<FormalSpec><![CDATA[input,&export:%Stream.Object]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Try {
+		Set io=""
+		// Always output to %FileCharacterStream
+		If $get(export)="" {
+			Set export=##class(%FileCharacterStream).%New()
+			// JSON is always UTF-8
+			Set export.TranslateTable="UTF8"
+			Set filestream=1
+		} Else {
+			Set filestream = ($zobjclass(export)="%Library.FileCharacterStream")
+		}
+		If filestream {
+			Set stream=export
+		} Else {
+			Set stream=##class(%FileCharacterStream).%New()
+			Set stream.TranslateTable="UTF8"
+		}
+		
+		// Force stream's file to open
+		Set sc=stream.Write("")
+		
+		// Export JSON to the stream
+		If $$$ISOK(sc) {
+			// Save current device
+			Set io=$io
+			// Make the stream file be the current device
+			Set file=stream.Filename ; get filename and make current device
+			Use file:(/NOXY)
+			Set sc=..FormatInternal(input,"",1)
+			// Don't Close file to leave stream positioned
+			Use io
+		}
+		
+		// Need to ensure that LineTerminator is correct for the platform
+		If $$$ISOK(sc) Set stream.LineTerminator=$select($$$isUNIX:$char(10),1:$char(13,10))
+		
+		// If we created the stream and caller passed in stream, then copy it to the caller's stream
+		If 'filestream,$$$ISOK(sc) {	
+			Set sc=export.CopyFrom(stream)
+		}
+
+	} Catch ex {
+		If io'="" Use io
+		Set sc=ex.AsStatus()
+	}
+
+	Quit sc
+]]></Implementation>
+</Method>
+
+<Method name="FormatToString">
+<Description><![CDATA[
+Format a JSON document using the specified indentation and write it to a string.<br>
+Serialize a JSON enabled class as a JSON document and return it as a string.<br>]]></Description>
+<FormalSpec><![CDATA[input,&export:%String=""]]></FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[	Quit ..FormatInternal(input,.export,0)
+]]></Implementation>
+</Method>
+
+<Method name="FormatInternal">
+<Description>
+Internal method to actually do the formatting</Description>
+<Internal>1</Internal>
+<FormalSpec><![CDATA[input,&export:%String,toDevice:%Boolean]]></FormalSpec>
+<Implementation><![CDATA[
+	Set sc=$$$OK
+	Try {
+		// If writing to current device then we need to clear our string buffer for each iteraation of loop
+		If toDevice Set export=""
+
+		// initialize indentation
+		Set indent=..Indent
+		If indent {
+			Set lineTerminator=..LineTerminator
+			Set indentChars=..IndentChars
+			Set indentLength=$length(indentChars)
+		} Else {
+			Set lineTerminator=""
+			Set indentChars=""
+			Set indentLength=0
+		}
+		Set currentIndent=""
+		
+		// If a JSON string, then convert to dynamic object or array before formatting
+		If $isobject(input),input.%IsA("%Library.DynamicAbstractObject") {
+			// Already a dynamic object
+			Set currentContainer=input
+		} Else {
+			// A JSON stream or string
+			Set currentContainer=##class(%Library.DynamicAbstractObject).%FromJSON(input)
+		}
+
+		// Initialize loop variables
+		Set stackCount=0
+		Set currentType=$select(currentContainer.%IsA("%Library.DynamicObject"):"object",1:"array")
+		Set currentIterator=currentContainer.%GetIterator()
+		Set sep=""
+		// Push stack
+		Set iteratorStack(stackCount)=currentIterator
+		Set containerStack(stackCount)=currentContainer
+		Set typeStack(stackCount)=currentType
+		Set stackCount=stackCount+1
+		
+		// Start output of object or array
+		Set export=export_$select(currentType="object":"{",1:"[")
+		If indent {
+			Set currentIndent=currentIndent_indentChars
+		}
+				
+		// Main loop to walk tree without using recursion
+		For {
+			// Finish up for this value and prepare for next
+			Set currentIteratorIsObject=currentIterator.%IsA("%Iterator.Object")
+			If currentIterator.%GetNext(.key,.current) {
+				// There is another value in this object or array.
+				Set currentType=$$$JSONGetTypeOf(currentContainer,key)
+				// Output , and indentation
+				Set export=export_sep
+				If indent Set export=export_lineTerminator_currentIndent
+				Set sep=","
+
+			} Else {
+				// There are no more values in this array or object
+				// Output closing } or ] with indentation
+    			If indent {
+	    			Set currentIndent=$extract(currentIndent,1,*-indentLength)
+	    			Set export=export_lineTerminator_currentIndent
+    			}
+				Set export=export_$select(currentIteratorIsObject:"}",1:"]")
+				
+				// Pop stack to make containing object or array the current object or array.
+				Set stackCount=stackCount-1
+				If stackCount=0 Quit
+				Set currentIterator=iteratorStack(stackCount)
+				Set currentContainer=containerStack(stackCount)
+				Set currentType=typeStack(stackCount)
+				Set sep=","
+				
+				// Get next value at previous level
+				Continue
+			}
+
+			// If this is an object, then output next field name.
+			If currentIteratorIsObject {
+				Set export=export_""""_key_""":"
+			}
+
+			// Stack processing for object and array values
+			If (currentType="object") || (currentType="array") {
+				// Push stack
+				Set iteratorStack(stackCount)=currentIterator
+				Set containerStack(stackCount)=currentContainer
+				Set typeStack(stackCount)=currentType
+				Set sep=""
+				Set stackCount=stackCount+1
+				
+				// Setup for loop over object values
+				Set currentIterator=current.%GetIterator()
+				Set currentContainer=current
+				
+				// Start output of object or array
+				Set export=export_$select(currentType="object":"{",1:"[")
+				If indent {
+					Set currentIndent=currentIndent_indentChars
+					If lineTerminator="" Set lineTerminator=..LineTerminator
+				}
+				
+			// Output of string
+			} ElseIf currentType="string" {
+				Set export=export_""""_$zcvt(current,"O","JSON")_""""
+
+			// Output of boolean
+			} ElseIf currentType="boolean" {
+				Set export=export_$select(current:"true",1:"false")
+
+			// Output null
+			} ElseIf currentType="null" {
+				Set export=export_"null"
+
+			// Output of number
+			} Else {
+				If $extract(current)="." Set current="0"_current
+				If $extract(current,1,2)="-." Set current="-0."_$extract(current,3,*)
+				Set export=export_current
+			}
+			
+			// If writing to current device then write buffer and clear our string buffer for each iteraation of loop
+			If toDevice {
+				Write export
+				Set export=""
+			}
+		}
+		
+		// Write the remainder
+		If toDevice,export'="" {
+			Write export
+		}
+
+	} Catch ex {
+		Set sc=ex.AsStatus()
+	}
+
+	Quit sc
+]]></Implementation>
+</Method>
+</Class>
+
+
+<Routine name="%ZPVA" type="INC"><![CDATA[
+#;%ZPVA 	backport to Caché by RCC 2020 for Developer Community
+	;
+	; Copyright (c) 2019 by InterSystems Corporation.
+	; Cambridge, Massachusetts, U.S.A.  All rights reserved.
+	; Confidential property of InterSystems Corporation.
+	;
+#; Definitions for Packed Vectors (PV) and Packed Vector Arrays (PVA)
+#;
+#; Define the PV_IDTYPE_x of PV as found in the header of the PV
+#;
+#; PV is a %DynamicArray
+#define	PVTYPEARRAY	     157         
+#; PV is a %DynamicObject (with its own keymap)
+#define PVTYPEOBJECT         158
+#; PV is a %DynamicString
+#define PVTYPECHAR	     159
+#; PV is a %DynamicBinary
+#define PVTYPEBINARY	     160
+#; PV is a %Stream.Dynamic{Character,Binary}
+#define PVTYPESTREAM	     161
+#;
+#; PV_Bufxxx type codes
+#;
+#; Buffer contains Characters
+#define PVBUFCHAR	1
+#; Buffer contains 8-bit bytes
+#define PVBUFBYTE	2
+#; Buffer contains 8-bit bytes (to be converted to Base64 when fetched)
+#define PVBUFBASE64	3
+#;
+#; Define the PV_VALUE_x, types of values, found inside a PV as returned
+#; by $gettypeof()
+#;
+#; String is null
+#define PVVALUENULL          0
+#; String is true
+#define PVVALUETRUE          1
+#; String is false
+#define PVVALUEFALSE         2
+#; 32-bit positive integer
+#define PVVALUEINTEGERPOS    3
+#; 32-bit negative integer
+#define PVVALUEINTEGERNEG    4
+#; Unused code
+#define PVVALUEUNUSED1       5
+#; This is meta-data for an array
+#define PVVALUEARRAY         6
+#; This is meta-data for an object
+#define PVVALUEOBJECT        7
+#; Normal text string
+#define PVVALUETEXT          8
+#; Numeric number
+#define PVVALUENUMBER        9
+#; Text overflow 
+#define	PVVALUEOVERFLOW	     10
+#; Cache floating point, 64 bit mantissa, 8 bits for sign and exponent
+#define PVVALUECACHENUMERIC  11
+#; An embedded Cache object, maybe another %Object or %Array
+#define PVVALUEOREF          12
+#; The value is unassigned
+#define	PVVALUEUNASSIGNED    13
+#; Long 64 bit, positive
+#define PVVALUELONGPOS       14
+#; Long 64 bit, negative
+#define PVVALUELONGNEG       15
+#; A byte[] array.
+#define PVVALUEBYTE          16
+#; Date/Time object
+#define PVVALUEDATETIME      17
+#; Double precision floating point in binary
+#define PVVALUEDOUBLE        18
+#; Single precision floating point in binary
+#define PVVALUESINGLE        19
+#; UTF-8 Bytes, in serialised format only
+#define PVVALUEUTF8          20
+#; Nested array or object, in serialised format only
+#define PVVALUENESTED        21
+#; End of data during $getNext()
+#define	PVVALUEEOF	     31
+#;
+#; Find out the type of value. 
+#; One of the following strings are returned.
+#;   "null"                  - JSON null
+#;   "boolean"               - Either "true" or "false"
+#;   "number"                - Any numeric value
+#;   "oref"                  - A reference to another Cache object
+#;   "object"                - A nested object
+#;   "array"                 - A nested array 
+#;   "string"                - Normal text string
+#;   "unassigned"            - The value is unassigned
+#; 
+#define JSONGetTypeOf(%object,%key) $CASE(%object.%GetTypeCodeOf(%key),$$$PVVALUENULL:"null",$$$PVVALUETRUE:"boolean",$$$PVVALUEFALSE:"boolean",$$$PVVALUEINTEGERPOS:"number",$$$PVVALUEINTEGERNEG:"number",$$$PVVALUEARRAY:"array",$$$PVVALUEOBJECT:"object",$$$PVVALUETEXT:"string",$$$PVVALUENUMBER:"number",$$$PVVALUEOVERFLOW:"illegalvalue",$$$PVVALUECACHENUMERIC:"number",$$$PVVALUEOREF:"oref",$$$PVVALUEUNASSIGNED:"unassigned",$$$PVVALUELONGPOS:"number",$$$PVVALUELONGNEG:"number",$$$PVVALUEBYTE:"string",$$$PVVALUEDOUBLE:"number",$$$PVVALUESINGLE:"number",$$$PVVALUEUTF8:"string",$$$PVVALUEEOF:"unassigned",:"UNKNOWN")
+#;
+#;
+#; These are the error codes that can be returned with %FromJSON()
+#;
+#; Parsing okay
+#define JSONERROROKAY					1
+#; Source wasn't a string
+#define JSONERRORNOSTRING				2
+#; General parsing error on JSON string
+#define JSONERRORPARSEFAIL				3
+#; Internal error
+#define JSONERRORINTERNALERROR				4
+#; Memory allocation failure
+#define JSONERRORNOMEMORY				5
+#; Invalid hex in \uXXXX string
+#define JSONERRORINVALIDHEX				6
+#; Hex in \uXXXX string too big for 8-bit systems
+#define JSONERROROVERFLOWHEX				7
+#; Invalid escape sequence \X
+#define JSONERRORINVALIDESCAPE				8
+#; Number is too large
+#define JSONERRORMAXNUMBERC				9
+#; Read error from input stream
+#define JSONERRORREADERROR				10
+#; Exceeded the maximum depth
+#define JSONERRORMAXDEPTH				11
+#; EOF seen prematurely
+#define JSONERRORUNEXPECTEDEOF				12
+#; A duplicate key was seen in an object
+#define JSONERRORDUPLICATEKEY				13
+#; An error was thrown by Cache
+#define JSONERRORCACHEKERNEL				14
+#; The metadata is missing or illegal
+#define JSONERRORMETADATA				15
+#; The internal structure is corrupt
+#define JSONERRORCORRUPTSTRUCTURE			16
+#; Invalid arguments passed to the $zu(210)
+#define JSONERRORINVALIDZUARGS				17
+#; Output variable exceeded maximum size
+#define JSONERRORMAXSIZE				18
+#;
+#;
+#; $ZU(210,subcode,...) subcodes
+#;
+#;
+#; PVSSize $ZU(210,$$$PVSSize)
+#; Returns 'allocated' size of PV_Buf/PV_Stream
+#;
+#define PVSSize			40
+#;
+#; PVSReadbuf $zu(210,$$$PVSReadBuf,i%DAOPos,..#BUFLEN)
+#; Returns string of length ..#BUFLEN starting at i%DAPPos in a PV_Buf;
+#; Note string may be shorter if end-of-buffer is enounted.
+#;
+#define PVSReadBuf		41
+#;
+#; PVSstreamPVO $ZU(210,$$$PVSstreamPVO,DAOstring)
+#; Current oref (which is an oref of the %Stream.DAOString
+#; class) gets PVO of type PVO_TYPE_STREAM which references the PV_Buf of
+#; oref DAOString (which is an oref of the %DynamicString class)
+#;
+#define PVSstreamPVO		42
+#;
+#; PVSstringBuf $ZU(210,$$$PVSstringBuf,size)
+#; Returns an empty %DynamicString object capable of holding at least
+#; 'size' characters.  This %DynamicString object is populated using
+#; $ZU(210,$$$PVSWriteBuf,buf,string) method calls.
+#;
+#define PVSstringBuf		43
+#;
+#; PVSWriteBuf $ZU(210,$$$PVSWriteBuf,buf,string)
+#; Appends 'string' onto end of %DynamicString 'buf' and returns the new
+#; length of 'buf'.
+#;
+#define PVSWriteBuf		44
+]]></Routine>
+</Export>
