@@ -1,4 +1,4 @@
-#;%ZPVA ;backport to Caché by RCC 2020 for Developer Community
+#;%ZPVA ;backport to Caché by RCC 2020 for Developer Community 
 	;
 	; Copyright (c) 2019 by InterSystems Corporation.
 	; Cambridge, Massachusetts, U.S.A.  All rights reserved.
