@@ -1,6 +1,12 @@
 # Backport of %JSON.Formatter from IRIS to Caché
 Have in Caché the same formatting available as in IRIS  
 
+~~~
+   This is a coding example working on Caché 2018.1.3
+   It will not be kept in synch with new versions   
+   It is also NOT serviced by InterSystems Support !
+~~~
+
 IRIS brought us an excellent %JSON.Formatter class. 
 This backport makes it available also in Caché.   
 
